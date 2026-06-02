@@ -1,104 +1,75 @@
 import polars as pl
 from pathlib import Path
+import pyarrow as pa
+from layers.utils import _s, _v, _p
+from config.settings import settings
 
 
-class FilterConfig:
-    CORE_SKILLS = {"python", "go", "golang"}
-
-    CV_INFRA = {
-        "sql",
-        "postgresql",
-        "docker",
-        "kubernetes",
-        "k8s",
-        "ci/cd",
-        "linux",
-        "bash",
-        "fastapi",
-        "redis",
-    }
-
-    TRANSITION_TARGETS = {
-        "pyspark",
-        "spark",
-        "databricks",
-        "airflow",
-        "etl",
-        "llm",
-        "mlops",
-        "machine learning",
-        "duckdb",
-        "polars",
-    }
-
-    ANTI_TITLES = "(?i)senior|lead|architect|manager|head|principal|director"
+def count_matches(skill_set: set) -> pl.Expr:
+    return (
+        pl.col("skills")
+        .list.eval(pl.element().str.to_lowercase().is_in(skill_set))
+        .list.sum()
+    )
 
 
-def build_silver_layer(input_json: str, parquet_file: str, output_json: str):
-    print("[*] Запуск Polars трансформации...")
+def calculate_match_score() -> pl.Expr:
+    is_target_contract = (
+        pl.col("contract").str.to_lowercase().str.contains("b2b|mandate|zlecenie")
+    )
+    is_target_salary = (pl.col("salary_max") >= 14000) | (pl.col("salary_min") >= 14000)
 
-    try:
-        df = pl.read_json(input_json)
-        if df.is_empty():
-            print("[-] Входной JSON пуст.")
-            return
-    except Exception as e:
-        print(f"[!] Ошибка чтения {input_json}: {e}")
-        return
+    infra_score = pl.col("infra_count") * 5
+    transition_score = pl.col("transition_count") * 30
 
-    parquet_path = Path(parquet_file)
-    if parquet_path.exists():
+    contract_bonus = pl.when(is_target_contract).then(10).otherwise(0)
+    salary_bonus = pl.when(is_target_salary).then(15).otherwise(0)
+
+    raw_score = infra_score + transition_score + contract_bonus + salary_bonus
+
+    return (
+        pl.when(pl.col("transition_count") > 0)
+        .then(raw_score + 15)
+        .otherwise(raw_score.clip(upper_bound=55))
+        .clip(lower_bound=0, upper_bound=100)
+        .alias("match_score")
+    )
+
+
+def filter_data(config, results: pa.Table):
+    job_postings = pl.from_arrow(results)
+
+    if (parquet_path := Path(settings.parquet_file)) and parquet_path.exists():
+        silver_df = pl.read_parquet(parquet_path)
         existing_ids = pl.read_parquet(parquet_path).select("job_id")
     else:
+        silver_df = pl.DataFrame(schema={"job_id": pl.Utf8})
         existing_ids = pl.DataFrame(schema={"job_id": pl.Utf8})
 
-    def count_matches(skill_set: set) -> pl.Expr:
-        return (
-            pl.col("skills")
-            .list.eval(pl.element().str.to_lowercase().is_in(skill_set))
-            .list.sum()
-        )
-
-    df_filtered = (
-        df.unique(subset=["title", "company"], keep="first")
-        .filter(~pl.col("title").str.contains(FilterConfig.ANTI_TITLES))
+    postings_filtered = (
+        job_postings.unique(subset=["title", "company"], keep="first")
+        .filter(~pl.col("title").str.contains(config.ANTI_TITLES))
         .with_columns(
-            core_count=count_matches(FilterConfig.CORE_SKILLS),
-            infra_count=count_matches(FilterConfig.CV_INFRA),
-            transition_count=count_matches(FilterConfig.TRANSITION_TARGETS),
+            core_count=count_matches(config.CORE_SKILLS),
+            infra_count=count_matches(config.CV_INFRA),
+            transition_count=count_matches(config.TRANSITION_TARGETS),
         )
         .filter(
             (pl.col("core_count") > 0)
             & ((pl.col("infra_count") > 0) | (pl.col("transition_count") > 0))
         )
-        .with_columns(
-            match_score=(
-                40 + pl.col("infra_count") * 10 + pl.col("transition_count") * 20
-            ).clip(upper_bound=100)
-        )
+        .with_columns(calculate_match_score())
         .join(existing_ids, on="job_id", how="anti")
         .sort(by="match_score", descending=True)
     )
 
-    if df_filtered.is_empty():
-        print("[-] Новых релевантных вакансий не найдено.")
-        return
+    if postings_filtered.is_empty():
+        _v("No new recruitment postings found.")
+        return pl.DataFrame()
 
-    print(f"\n[+] Найдено {df_filtered.shape[0]} новых матчей:")
+    updated_silver = pl.concat([silver_df, postings_filtered], how="diagonal")
+    updated_silver.write_parquet(settings.parquet_file)
 
-    display_df = df_filtered.select(["title", "company", "skills", "match_score"])
-    print(display_df)
-
-    df_filtered.write_json(output_json)
-
-    if parquet_path.exists():
-        silver_df = pl.read_parquet(parquet_path)
-        updated_silver = pl.concat([silver_df, df_filtered], how="diagonal")
-    else:
-        updated_silver = df_filtered
-
-    updated_silver.write_parquet(parquet_path)
-    updated_silver.write_json(output_json)
-    print(f"[*] Стейт обновлен: {parquet_file}")
-    print(f"[*] Результаты выгружены в: {output_json}")
-
+    _p(f"Found {postings_filtered.shape[0]} new recruitment postings:")
+    _s(f"State updated: {settings.parquet_file}")
+    return postings_filtered
