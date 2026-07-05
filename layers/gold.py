@@ -1,76 +1,10 @@
 import json
-import polars as pl
 from rich.text import Text
-from openai import AsyncOpenAI
 from config.settings import settings
-from layers.utils import _s, _e
+from layers.utils import _s
 from rich.console import Console
 from rich.panel import Panel
 from layers.utils import _p
-
-
-async def run_gold_layer() -> None:
-    if not settings.parquet_file.exists():
-        _e(
-            f"Analysis artifact missing at {settings.parquet_file}. Execute the transformation layer first."
-        )
-        return
-
-    df = pl.read_parquet(settings.parquet_file)
-    if df.is_empty():
-        _e("The source dataset is empty. Nothing to process for the Gold layer.")
-        return
-
-    top_jobs = (
-        df.sort("match_score", descending=True)
-        .select(["title", "company", "salary_min", "salary_max", "skills"])
-        .head(15)
-        .to_dicts()
-    )
-
-    context_entries = []
-    for job in top_jobs:
-        sal_min = job.get("salary_min") or "N/A"
-        sal_max = job.get("salary_max") or "N/A"
-        skills = ", ".join(job.get("skills") or [])
-        entry = f"- {job['title']} | {job['company']} | ЗП: {sal_min}-{sal_max} PLN | Стек: {skills}"
-        context_entries.append(entry)
-
-    context = "\n".join(context_entries)
-    client = AsyncOpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url)
-
-    prompt = f"""
-Ты — Senior Technical Recruiter. Выбери 3 лучшие вакансии для Python Backend инженера, переходящего в Data Engineering.
-Критерии: Python + Инфраструктура (Docker, K8s, Cloud, Data pipelines). 
-Бюджет 14k-16k PLN. 
-Выведи результат в Markdown:
-### 1. [Название] @ [Компания]
-- Почему это мэтч: [1 предложение]
-- Что продать из опыта: [1 предложение]
-
-Вакансии:
-{context}
-"""
-
-    _s(f"Dispatching top 15 qualified allocations to {settings.llm_model}...")
-
-    try:
-        response = await client.chat.completions.create(
-            model=settings.llm_model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.2,
-        )
-
-        output = response.choices[0].message.content.strip()
-
-        print("\n" + "=" * 60)
-        print("🏆 Final Top for Recruitment 🏆")
-        print("=" * 60)
-        print(output)
-        print("=" * 60)
-
-    except Exception as error:
-        _e(f"Failed to synthesize Gold layer report via LLM execution engine: {error}")
 
 
 async def generate_gold_report(filtered_postings) -> None:

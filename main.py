@@ -1,15 +1,3 @@
-# class Settings:
-#     llm_api_key: str = (
-#         ""
-#     )
-#     llm_model: str = "deepseek-v4-flash"
-#     llm_base_url: str = "https://opencode.ai/zen/go/v1"
-#     intermediate_json: str = "data/massive_jobs_dataset.json"
-#     parquet_file: str = "db/silver.parquet"
-#     no_fluff_pages: int = 5
-#     NFJ_API_URL = "https://nofluffjobs.com/api/posting?page=0&pageSize=1"
-
-
 from layers.gold import generate_gold_report
 from layers.utils import _e, _s
 import httpx
@@ -62,7 +50,6 @@ async def main():
         except Exception as e:
             _e(f"Error fetching data: {e}")
     filtered_postings = filter_data(config=FilterConfig, results=combined_table)
-    # await run_gold_layer()
     await generate_gold_report(filtered_postings)
 
 

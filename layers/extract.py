@@ -8,8 +8,6 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from config.settings import settings
 
-NFJ_API_URL = "https://nofluffjobs.com/api/posting?page=0&pageSize=1"
-
 JOB_SCHEMA = pa.schema(
     [
         ("job_id", pa.string()),
@@ -95,7 +93,7 @@ async def fetch_jobs(
 
 
 async def extract_nofluffjobs(client: httpx.AsyncClient):
-    result = await fetch_jobs(
+    return await fetch_jobs(
         client=client,
         url=settings.nfj_api_url,
         pages=settings.nfj_pages,
@@ -103,7 +101,6 @@ async def extract_nofluffjobs(client: httpx.AsyncClient):
         function_to_parse=parse_nfj_offer,
         parquet_file=settings.nfj_parquet,
     )
-    return result
 
 
 async def fetch_justjoinit_raw(
