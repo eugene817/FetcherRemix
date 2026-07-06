@@ -1,6 +1,7 @@
 import json
 from rich.text import Text
 from config.settings import settings
+import polars as pl
 from layers.utils import _s
 from rich.console import Console
 from rich.panel import Panel
@@ -14,11 +15,18 @@ async def generate_gold_report(filtered_postings) -> None:
         )
         return
 
-    report_df = filtered_postings.sort("match_score", descending=True).head(3)
+    senior_keywords = r"(?i)(senior|lead|principal|architect|manager|head|director)"
+    report_df = filtered_postings.filter(~pl.col("title").str.contains(senior_keywords))
+    MAX_MIN_SALARY = 18000
+    report_df = report_df.filter(
+        pl.col("salary_min").is_null() | (pl.col("salary_min") <= MAX_MIN_SALARY)
+    )
 
     if report_df.is_empty():
         _s("No high-confidence matches found today.")
         return
+
+    report_df = report_df.sort("match_score", descending=True).head(3)
 
     console = Console()
     console.print("\n🏆 [bold magenta]Final Top for Recruitment[/bold magenta] 🏆\n")

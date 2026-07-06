@@ -23,6 +23,11 @@ class AppSettings(BaseSettings):
     justjoinit_api_url: str = "https://justjoin.it/api/v2/offers"
     justjoinit_pages: int = 1
 
+    pracuj_pl_url: str = (
+        "https://it.pracuj.pl/praca/data%20engineer;kw/praca%20zdalna;wm,home-office"
+    )
+    pracuj_pl_parquet: Path = Path("db/pracuj.parquet")
+
 
 class FilterConfig(BaseSettings):
     CORE_SKILLS: set[str] = {"python", "go", "golang"}

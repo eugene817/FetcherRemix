@@ -1,8 +1,10 @@
+from layers.extract.extract_pracuj import fetch_pracuj
 from layers.gold import generate_gold_report
-from layers.utils import _e, _s
+from layers.utils import _e, _p
 import httpx
 from layers.transform import filter_data
-from layers.extract import fetch_justjoinit_raw, extract_nofluffjobs
+from layers.extract.extract_jj import fetch_justjoinit_raw
+from layers.extract.extract_nofluff import extract_nofluffjobs
 import pyarrow as pa
 
 
@@ -42,11 +44,15 @@ async def main():
     async with httpx.AsyncClient(timeout=15.0) as client:
         try:
             fluff_table = await extract_nofluffjobs(client=client)
+            _p(f"fluff_table: {fluff_table.shape[0]} rows")
             justjoinit_table = await fetch_justjoinit_raw(client=client)
-            _s(f"fluff_table: {fluff_table.shape[0]} rows")
-            _s(f"justjoinit_table: {justjoinit_table.shape[0]} rows")
-            combined_table = pa.concat_tables([justjoinit_table, fluff_table])
-            _s(f"combined_table: {combined_table.shape[0]} rows")
+            _p(f"justjoinit_table: {justjoinit_table.shape[0]} rows")
+            pracuj_table = fetch_pracuj()
+            _p(f"pracuj_table: {pracuj_table.shape[0]} rows")
+            combined_table = pa.concat_tables(
+                [justjoinit_table, fluff_table, pracuj_table]
+            )
+            _p(f"combined_table: {combined_table.shape[0]} rows")
         except Exception as e:
             _e(f"Error fetching data: {e}")
     filtered_postings = filter_data(config=FilterConfig, results=combined_table)
