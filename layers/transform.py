@@ -19,11 +19,24 @@ def calculate_match_score() -> pl.Expr:
     )
     is_target_salary = (pl.col("salary_max") >= 14000) | (pl.col("salary_min") >= 14000)
 
-    infra_score = pl.col("infra_count") * 5
-    transition_score = pl.col("transition_count") * 30
+    infra_score = pl.col("infra_count") * 10
+    transition_score = pl.col("transition_count") * 35
 
-    contract_bonus = pl.when(is_target_contract).then(10).otherwise(0)
-    salary_bonus = pl.when(is_target_salary).then(15).otherwise(0)
+    contract_bonus = (
+        pl.when(pl.col("contract").is_null())
+        .then(7)
+        .when(is_target_contract)
+        .then(10)
+        .otherwise(0)
+    )
+
+    salary_bonus = (
+        pl.when(pl.col("salary_min").is_null() & pl.col("salary_max").is_null())
+        .then(10)
+        .when(is_target_salary)
+        .then(15)
+        .otherwise(0)
+    )
 
     raw_score = infra_score + transition_score + contract_bonus + salary_bonus
 

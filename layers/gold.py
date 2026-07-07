@@ -17,6 +17,8 @@ async def generate_gold_report(filtered_postings) -> None:
 
     senior_keywords = r"(?i)(senior|lead|principal|architect|manager|head|director)"
     report_df = filtered_postings.filter(~pl.col("title").str.contains(senior_keywords))
+    irrelevant_keywords = r"(?i)(c\+\+|embedded|frontend|react|angular|migration|support|helpdesk|android|ios|flutter)"
+    report_df = report_df.filter(~pl.col("title").str.contains(irrelevant_keywords))
     MAX_MIN_SALARY = 18000
     report_df = report_df.filter(
         pl.col("salary_min").is_null() | (pl.col("salary_min") <= MAX_MIN_SALARY)
