@@ -8,7 +8,7 @@ from rich.panel import Panel
 from layers.utils import _p
 
 
-async def generate_gold_report(filtered_postings) -> None:
+async def generate_gold_report(filtered_postings, number_of_rows) -> None:
     if filtered_postings.is_empty():
         _s(
             "No new high-confidence matches found today. Skipping dashboard compilation."
@@ -28,7 +28,7 @@ async def generate_gold_report(filtered_postings) -> None:
         _s("No high-confidence matches found today.")
         return
 
-    report_df = report_df.sort("match_score", descending=True).head(3)
+    report_df = report_df.sort("match_score", descending=True).head(number_of_rows or 3)
 
     console = Console()
     console.print("\n🏆 [bold magenta]Final Top for Recruitment[/bold magenta] 🏆\n")

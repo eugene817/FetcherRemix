@@ -40,7 +40,7 @@ class FilterConfig:
     ANTI_TITLES = "(?i)senior|lead|architect|manager|head|principal|director"
 
 
-async def main():
+async def main(number_of_rows=None):
     async with httpx.AsyncClient(timeout=15.0) as client:
         try:
             fluff_table = await extract_nofluffjobs(client=client)
@@ -56,10 +56,16 @@ async def main():
         except Exception as e:
             _e(f"Error fetching data: {e}")
     filtered_postings = filter_data(config=FilterConfig, results=combined_table)
-    await generate_gold_report(filtered_postings)
+    await generate_gold_report(filtered_postings, number_of_rows)
 
 
 if __name__ == "__main__":
     import asyncio
+    import sys
 
-    asyncio.run(main())
+    if len(sys.argv) > 1:
+        number_of_rows = int(sys.argv[1])
+    else:
+        number_of_rows = None
+
+    asyncio.run(main(number_of_rows))

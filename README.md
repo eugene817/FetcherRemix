@@ -11,7 +11,7 @@ Fetches and analyzes job market data from Polish job boards (NoFluffJobs, JustJo
 
 ```bash
 uv sync
-uv run main.py
+uv run main.py <number_of_gold_rows>
 ```
 
 ## Structure
