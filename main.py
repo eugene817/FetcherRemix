@@ -41,9 +41,9 @@ async def main(number_of_rows: int = 3) -> None:
 
 @app.command()
 def fetch(
-    days: int = typer.Option(3, help="Amount of gold report rows"),
+    rows: int = typer.Option(3, help="Amount of gold report rows"),
 ) -> None:
-    asyncio.run(main(days))
+    asyncio.run(main(rows))
 
 
 if __name__ == "__main__":

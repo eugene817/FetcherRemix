@@ -1,21 +1,55 @@
-# FetcherRemix
+# 🚀 FetcherRemix
 
-Fetches and analyzes job market data from Polish job boards (NoFluffJobs, JustJoinIT).
+**FetcherRemix** is a high-performance, asynchronous ETL pipeline designed to aggregate, clean, and analyze job postings from the Polish IT market. The system fetches data from major job boards (**JustJoinIT**, **NoFluffJobs**, **Pracuj.pl**), standardizes it, and filters relevant offers based on custom metrics.
 
-## Requirements
+Built around the modern Python ecosystem: **`uv`**, **`Polars`**, **`Playwright`**, and **`Ruff`**.
 
-- Python 3.12+
-- [uv](https://docs.astral.sh/uv/)
+---
 
-## Setup
+## ⚡ Key Features
+
+* **Asynchronous High-Speed Ingestion:** Parallel data fetching via `asyncio` (combining `httpx` for API sources and `Playwright` for web scraping).
+* **Medallion (ETL) Architecture:** Multi-layered data processing:
+  * 🥉 **Bronze:** Raw data from sources.
+  * 🥈 **Silver:** Cleaning, deduplication, currency normalization, and `match_score` calculation using **Polars & PyArrow**.
+  * 🥇 **Gold:** Filtering by stop-words, salary thresholds, and generation of the final analytical report.
+* **Modern Tooling:** Dependency management and package building powered by `uv`. Code is validated against strict `Ruff (ALL)` rules.
+* **Beautiful CLI & Output:** Interactive terminal interface built with `Typer` and `Rich`.
+
+---
+
+## 🏗 Architecture & Data Structure
+
+The project strictly follows the separation of concerns principle:
+
+* `layers/` — Core data processing pipeline.
+  * `layers/extract/` — Data extraction modules (Playwright / HTTP Clients).
+  * `layers/transform.py` — Business logic and data normalization layer (Silver).
+  * `layers/gold.py` — Final data mart generation and CLI visualization.
+* `config/` — Centralized project settings (Pydantic / Settings).
+* `data/` & `db/` — Local artifact storage (`.parquet` for analytics, `.json` for reports).
+
+---
+
+## 🚀 Quick Start
+
+You can run the project directly from GitHub without manually cloning the repository, thanks to `uvx`:
 
 ```bash
-uv sync
-uv run main.py <number_of_gold_rows>
+uvx --from git+https://github.com/eugene817/FetcherRemix.git fetcher --rows 5
 ```
 
-## Structure
+## Local Development
 
-- `layers/` - data processing pipeline (bronze -> silver -> gold)
-- `config/` - configuration
-- `data/` - output reports
+To set up a local development environment, follow these steps:
+
+1. Setup local env:
+```bash
+uv sync
+uv run playwright install chromium
+```
+
+2. Run the pipeline:
+```bash
+uv run main.py --rows 5
+```
