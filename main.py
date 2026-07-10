@@ -1,3 +1,4 @@
+import asyncio
 from layers.extract.extract_pracuj import fetch_pracuj
 from layers.gold import generate_gold_report
 from layers.utils import _e, _p
@@ -43,11 +44,16 @@ class FilterConfig:
 async def main(number_of_rows=None):
     async with httpx.AsyncClient(timeout=15.0) as client:
         try:
-            fluff_table = await extract_nofluffjobs(client=client)
-            _p(f"fluff_table: {fluff_table.shape[0]} rows")
-            justjoinit_table = await fetch_justjoinit_raw(client=client)
+            task_fluff = extract_nofluffjobs(client=client)
+            task_justjoinit = fetch_justjoinit_raw(client=client)
+            task_pracuj = asyncio.to_thread(fetch_pracuj)
+
+            fluff_table, justjoinit_table, pracuj_table = await asyncio.gather(
+                task_fluff, task_justjoinit, task_pracuj
+            )
+
             _p(f"justjoinit_table: {justjoinit_table.shape[0]} rows")
-            pracuj_table = fetch_pracuj()
+            _p(f"fluff_table: {fluff_table.shape[0]} rows")
             _p(f"pracuj_table: {pracuj_table.shape[0]} rows")
             combined_table = pa.concat_tables(
                 [justjoinit_table, fluff_table, pracuj_table]
