@@ -53,7 +53,7 @@ git clone https://github.com/eugene817/FetcherRemix.git
 uv sync
 uv run playwright install chromium
 ```
-or
+    or
 
 ```bash
 make install
@@ -64,7 +64,8 @@ make install
 ```bash
 make run
 ```
-or 
+    or 
+
 ```bash
 uv run main.py --rows 5
 ```
