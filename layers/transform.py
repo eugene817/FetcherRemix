@@ -1,8 +1,15 @@
-import polars as pl
 from pathlib import Path
-import pyarrow as pa
-from layers.utils import _s, _v, _p
-from config.settings import settings
+from typing import TYPE_CHECKING
+
+import polars as pl
+
+from config.settings import filter_config, settings
+from layers.utils import _p, _s, _v
+
+SALARY_SANITY_THRESHOLD = 14000
+
+if TYPE_CHECKING:
+    import pyarrow as pa
 
 
 def count_matches(skill_set: set) -> pl.Expr:
@@ -17,7 +24,9 @@ def calculate_match_score() -> pl.Expr:
     is_target_contract = (
         pl.col("contract").str.to_lowercase().str.contains("b2b|mandate|zlecenie")
     )
-    is_target_salary = (pl.col("salary_max") >= 14000) | (pl.col("salary_min") >= 14000)
+    is_target_salary = (pl.col("salary_max") >= SALARY_SANITY_THRESHOLD) | (
+        pl.col("salary_min") >= SALARY_SANITY_THRESHOLD
+    )
 
     infra_score = pl.col("infra_count") * 10
     transition_score = pl.col("transition_count") * 35
@@ -49,7 +58,7 @@ def calculate_match_score() -> pl.Expr:
     )
 
 
-def filter_data(config, results: pa.Table):
+def filter_data(results: pa.Table) -> pl.DataFrame:
     job_postings = pl.from_arrow(results)
 
     if (parquet_path := Path(settings.parquet_file)) and parquet_path.exists():
@@ -61,11 +70,11 @@ def filter_data(config, results: pa.Table):
 
     postings_filtered = (
         job_postings.unique(subset=["title", "company"], keep="first")
-        .filter(~pl.col("title").str.contains(config.ANTI_TITLES))
+        .filter(~pl.col("title").str.contains(filter_config.ANTI_TITLES))
         .with_columns(
-            core_count=count_matches(config.CORE_SKILLS),
-            infra_count=count_matches(config.CV_INFRA),
-            transition_count=count_matches(config.TRANSITION_TARGETS),
+            core_count=count_matches(filter_config.CORE_SKILLS),
+            infra_count=count_matches(filter_config.CV_INFRA),
+            transition_count=count_matches(filter_config.TRANSITION_TARGETS),
         )
         .filter(
             (pl.col("core_count") > 0)

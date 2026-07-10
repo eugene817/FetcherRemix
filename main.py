@@ -1,52 +1,25 @@
 import asyncio
-from layers.extract.extract_pracuj import fetch_pracuj
-from layers.gold import generate_gold_report
-from layers.utils import _e, _p
+
 import httpx
-from layers.transform import filter_data
+import pyarrow as pa
+import typer
+
 from layers.extract.extract_jj import fetch_justjoinit_raw
 from layers.extract.extract_nofluff import extract_nofluffjobs
-import pyarrow as pa
+from layers.extract.extract_pracuj import fetch_pracuj
+from layers.gold import generate_gold_report
+from layers.transform import filter_data
+from layers.utils import _e, _p
+
+app = typer.Typer()
 
 
-class FilterConfig:
-    CORE_SKILLS = {"python", "go", "golang"}
-
-    CV_INFRA = {
-        "sql",
-        "postgresql",
-        "docker",
-        "kubernetes",
-        "k8s",
-        "ci/cd",
-        "linux",
-        "bash",
-        "fastapi",
-        "redis",
-    }
-
-    TRANSITION_TARGETS = {
-        "pyspark",
-        "spark",
-        "databricks",
-        "airflow",
-        "etl",
-        "llm",
-        "mlops",
-        "machine learning",
-        "duckdb",
-        "polars",
-    }
-
-    ANTI_TITLES = "(?i)senior|lead|architect|manager|head|principal|director"
-
-
-async def main(number_of_rows=None):
+async def main(number_of_rows: int = 3) -> None:
     async with httpx.AsyncClient(timeout=15.0) as client:
         try:
             task_fluff = extract_nofluffjobs(client=client)
             task_justjoinit = fetch_justjoinit_raw(client=client)
-            task_pracuj = asyncio.to_thread(fetch_pracuj)
+            task_pracuj = fetch_pracuj()
 
             fluff_table, justjoinit_table, pracuj_table = await asyncio.gather(
                 task_fluff, task_justjoinit, task_pracuj
@@ -61,17 +34,17 @@ async def main(number_of_rows=None):
             _p(f"combined_table: {combined_table.shape[0]} rows")
         except Exception as e:
             _e(f"Error fetching data: {e}")
-    filtered_postings = filter_data(config=FilterConfig, results=combined_table)
+            raise
+    filtered_postings = filter_data(results=combined_table)
     await generate_gold_report(filtered_postings, number_of_rows)
 
 
+@app.command()
+def fetch(
+    days: int = typer.Option(3, help="Amount of gold report rows"),
+) -> None:
+    asyncio.run(main(days))
+
+
 if __name__ == "__main__":
-    import asyncio
-    import sys
-
-    if len(sys.argv) > 1:
-        number_of_rows = int(sys.argv[1])
-    else:
-        number_of_rows = None
-
-    asyncio.run(main(number_of_rows))
+    app()

@@ -1,32 +1,39 @@
-from layers.utils import _s
-from selenium.webdriver.remote.webelement import WebElement
+import asyncio
 import re
-import time
+from typing import TYPE_CHECKING
+
 import pyarrow as pa
 import pyarrow.parquet as pq
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from layers.schema import JOB_SCHEMA
-from webdriver_manager.chrome import ChromeDriverManager
+from fake_useragent import UserAgent
+from playwright.async_api import Browser, Locator, Page, Playwright, async_playwright
+
 from config.settings import settings
+from layers.schema import JOB_SCHEMA
+from layers.utils import _s
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 NONE_VALUE = "Not shown"
+HOURLY_RATE_SANITY_THRESHOLD = 1000
+HOURS_PER_MONTH = 160
+ua = UserAgent(os=["Windows", "Mac OS X"])
 
 
-def create_driver() -> webdriver.Chrome:
-    options = webdriver.ChromeOptions()
-    options.add_argument("--disable-gpu")
-    options.add_argument("--window-size=1920,1080")
-    options.add_argument("--start-maximized")
-    options.add_argument(
-        "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+async def get_text(locator: Locator) -> str:
+    if await locator.count() > 0:
+        text = await locator.first.text_content()
+        return text.strip() if text else NONE_VALUE
+    return NONE_VALUE
+
+
+async def create_driver(p: Playwright) -> tuple[Page, Browser]:
+    browser = await p.chromium.launch(headless=True)
+    context = await browser.new_context(
+        viewport={"width": 1920, "height": 1080},
+        user_agent=ua.random,
     )
-
-    service = Service(ChromeDriverManager().install())
-    return webdriver.Chrome(service=service, options=options)
+    return await context.new_page(), browser
 
 
 def parse_salary_range(salary_text: str) -> tuple[int | None, int | None]:
@@ -37,7 +44,7 @@ def parse_salary_range(salary_text: str) -> tuple[int | None, int | None]:
 
     normalized_text = salary_text.replace(",", "").replace(" ", "").replace("\xa0", "")
 
-    pattern = r"(\d+)[\s\xa0]*[–—-][\s\xa0]*(\d+)"
+    pattern = r"(\d+)[\s\xa0]*-[\s\xa0]*(\d+)"
     match = re.search(pattern, normalized_text)
 
     if match:
@@ -51,156 +58,123 @@ def parse_salary_range(salary_text: str) -> tuple[int | None, int | None]:
         else:
             return None, None
 
-    if min_val < 1000 and not is_hourly:
-        min_val *= 1000
-        max_val *= 1000
+    if min_val < HOURLY_RATE_SANITY_THRESHOLD and not is_hourly:
+        min_val *= HOURLY_RATE_SANITY_THRESHOLD
+        max_val *= HOURLY_RATE_SANITY_THRESHOLD
 
     if is_hourly:
-        min_val *= 168
-        max_val *= 168
+        min_val *= HOURS_PER_MONTH
+        max_val *= HOURS_PER_MONTH
 
     return min_val, max_val
 
 
-def accept_cookies(driver: webdriver.Chrome) -> None:
-    try:
-        wait = WebDriverWait(driver, 7)
-        cookie_button = wait.until(
-            EC.element_to_be_clickable(
-                (By.CSS_SELECTOR, '[data-test="button-acceptAll"]')
-            )
-        )
-        cookie_button.click()
-    except Exception:
-        pass
+async def parse_info(info_locs: Iterable[Locator]) -> tuple[str, bool]:
+    for info_loc in info_locs:
+        info_text = await info_loc.text_content()
+        if not info_text:
+            continue
+        info_text = info_text.lower()
+        if "b2b" in info_text:
+            contract_type = "B2B"
+        elif "pracę" in info_text or "uop" in info_text:
+            contract_type = "UoP"
+        elif "zlecenie" in info_text:
+            contract_type = "Uz"
+
+        if "zdalna" in info_text or "hybrydowa" in info_text:
+            is_remote = True
+
+    return contract_type, is_remote
 
 
-def get_text(element: WebElement) -> str:
-    return element.get_attribute("textContent").strip() if element else NONE_VALUE
+async def parse_card(card: Locator) -> pa.Table | None:
+    technologies = []
+    link_loc = card.locator('[data-test="link-offer"]')
+    if await link_loc.count() == 0:
+        return None
 
+    link = await link_loc.first.get_attribute("href")
 
-def extract_job_links(driver: webdriver.Chrome):
-    wait = WebDriverWait(driver, 10)
-    wait.until(
-        EC.presence_of_element_located(
-            (By.CSS_SELECTOR, '[data-test="section-offers"]')
-        )
+    salary = await get_text(card.locator('[data-test="offer-salary"]'))
+    title = await get_text(card.locator('[data-test="offer-title"]'))
+
+    min_salary, max_salary = parse_salary_range(salary)
+    company = await get_text(card.locator('[data-test="text-company-name"]'))
+
+    tech_locs = await card.locator('[data-test="technologies-item"]').all()
+    for tech_loc in tech_locs:
+        tech_text = await tech_loc.text_content()
+        if tech_text and tech_text.strip() != NONE_VALUE:
+            technologies.append(tech_text.strip())
+
+    info_locs = await card.locator('[data-test^="offer-additional-info-"]').all()
+    contract_type, is_remote = await parse_info(info_locs)
+
+    return pa.Table.from_pylist(
+        [
+            {
+                "title": title,
+                "company": company,
+                "url": link,
+                "skills": technologies,
+                "salary_min": min_salary,
+                "salary_max": max_salary,
+                "contract_type": contract_type,
+                "is_remote": is_remote,
+            },
+        ],
+        schema=JOB_SCHEMA,
     )
 
-    cards = driver.find_elements(By.CSS_SELECTOR, '[data-test="default-offer"]')
-    data = []
 
-    for card in cards:
-        technologies = []
-        contract_type = NONE_VALUE
-        is_remote = False
-
-        link_elements = card.find_elements(By.CSS_SELECTOR, '[data-test="link-offer"]')
-
-        if not link_elements:
-            continue
-
-        url = link_elements[0].get_attribute("href")
-
-        salary_elements = card.find_elements(
-            By.CSS_SELECTOR, '[data-test="offer-salary"]'
-        )
-        title_elements = card.find_elements(
-            By.CSS_SELECTOR, '[data-test="offer-title"]'
-        )
-        company_elements = card.find_elements(
-            By.CSS_SELECTOR, '[data-test="text-company-name"]'
-        )
-        additional_info_elements = card.find_elements(
-            By.CSS_SELECTOR, '[data-test^="offer-additional-info-"]'
-        )
-        texnologies_elements = card.find_elements(
-            By.CSS_SELECTOR, '[data-test="technologies-item"]'
-        )
-
-        salary = get_text(salary_elements[0] if salary_elements else None)
-        title = get_text(title_elements[0] if title_elements else None)
-        min_salary, max_salary = parse_salary_range(salary)
-        copmany = get_text(company_elements[0])
-
-        for texnology_element in texnologies_elements:
-            if (texnology := get_text(texnology_element)) != NONE_VALUE:
-                technologies.append(texnology)
-
-        for additional_info_element in additional_info_elements:
-            info_text = get_text(additional_info_element).lower()
-            if not info_text:
-                continue
-            if "b2b" in info_text:
-                contract_type = "B2B"
-            elif "pracę" in info_text or "uop" in info_text:
-                contract_type = "UoP"
-            elif "zlecenie" in info_text:
-                contract_type = "Uz"
-            if "zdalna" in info_text or "hybrydowa" in info_text:
-                is_remote = True
-
-        data.append(
-            pa.Table.from_pylist(
-                [
-                    {
-                        "title": title,
-                        "company": copmany,
-                        "url": url,
-                        "skills": technologies,
-                        "salary_min": min_salary,
-                        "salary_max": max_salary,
-                        "contract_type": contract_type,
-                        "is_remote": is_remote,
-                    },
-                ],
-                schema=JOB_SCHEMA,
-            )
-        )
-
-    return data
+async def extract_job_links(page: Page) -> list[pa.Table]:
+    await page.wait_for_selector('[data-test="section-offers"]', timeout=10000)
+    cards = await page.locator('[data-test="default-offer"]').all()
+    return [
+        job_post for card in cards if (job_post := await parse_card(card)) is not None
+    ]
 
 
-def go_to_next_page(driver: webdriver.Chrome) -> bool:
+async def go_to_next_page(page: Page) -> bool:
     try:
-        next_button = driver.find_element(
-            By.CSS_SELECTOR, '[data-test="button-next-page"]'
-        )
+        next_button = page.locator('[data-test="button-next-page"]')
 
-        if not next_button.is_enabled():
+        if await next_button.count() == 0:
             return False
 
-        driver.execute_script("arguments[0].scrollIntoView(true);", next_button)
-        time.sleep(1)
+        if not await next_button.is_enabled():
+            return False
 
-        next_button.click()
-        return True
+        await next_button.click()
+
+        await page.wait_for_load_state("networkidle")
     except Exception:
         return False
+    else:
+        return True
 
 
-def fetch_pracuj() -> pa.Table:
-    driver = create_driver()
-    all_data = []
-
+async def fetch_pracuj() -> pa.Table:
     _s("[cyan]Fetching data from Pracuj.pl")
+    async with async_playwright() as p:
+        page, browser = await create_driver(p)
+        all_data = []
+        try:
+            await page.goto(settings.pracuj_pl_url)
+            while True:
+                links = await extract_job_links(page)
+                all_data.extend(links)
 
-    try:
-        driver.get(settings.pracuj_pl_url)
-        accept_cookies(driver)
+                if not await go_to_next_page(page):
+                    break
 
-        while True:
-            page_data = extract_job_links(driver)
-            all_data.extend(page_data)
+                await asyncio.sleep(1.5)
 
-            if not go_to_next_page(driver):
-                break
+            table = pa.concat_tables(all_data)
+            pq.write_table(table, settings.pracuj_pl_parquet)
 
-            time.sleep(2)
-        table = pa.concat_tables(all_data)
-        pq.write_table(table, settings.pracuj_pl_parquet)
+            return table
 
-    finally:
-        driver.quit()
-
-    return table
+        finally:
+            await browser.close()

@@ -1,4 +1,5 @@
 from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -11,7 +12,6 @@ class AppSettings(BaseSettings):
     llm_model: str = "deepseek-v4-flash"
     llm_base_url: str = "https://opencode.ai/zen/go/v1"
 
-    # intermediate_json: Path = Path("data/massive_jobs_dataset.json")
     parquet_file: Path = Path("db/silver.parquet")
     gold_report_json: Path = Path("data/gold_report.json")
 

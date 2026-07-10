@@ -1,10 +1,15 @@
-from layers.utils import _s
-from bs4 import BeautifulSoup
-import httpx
+from typing import TYPE_CHECKING
+
 import pyarrow as pa
 import pyarrow.parquet as pq
+from bs4 import BeautifulSoup
+
 from config.settings import settings
 from layers.schema import JOB_SCHEMA
+from layers.utils import _s
+
+if TYPE_CHECKING:
+    import httpx
 
 
 async def fetch_justjoinit_raw(
@@ -12,7 +17,8 @@ async def fetch_justjoinit_raw(
 ) -> pa.Table:
     url = f"https://justjoin.it/job-offers/remote/{category}?orderBy=DESC&sortBy=published"
     headers = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
     _s("[cyan]Fetching data from JustJoinIt")
 

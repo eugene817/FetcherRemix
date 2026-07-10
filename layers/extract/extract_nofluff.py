@@ -1,11 +1,17 @@
-from layers.utils import _s
-from pathlib import Path
-from typing import Callable
-import httpx
+from typing import TYPE_CHECKING
+
 import pyarrow as pa
 import pyarrow.parquet as pq
+
 from config.settings import settings
 from layers.schema import JOB_SCHEMA
+from layers.utils import _s
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from pathlib import Path
+
+    import httpx
 
 
 def parse_nfj_offer(posting: dict) -> dict:
@@ -37,7 +43,6 @@ async def fetch_jobs(
     client: httpx.AsyncClient,
     url: str,
     pages: int,
-    name: str,
     function_to_parse: Callable,
     parquet_file: Path,
 ) -> list[dict]:
@@ -60,12 +65,11 @@ async def fetch_jobs(
     return table
 
 
-async def extract_nofluffjobs(client: httpx.AsyncClient):
+async def extract_nofluffjobs(client: httpx.AsyncClient) -> pa.Table:
     return await fetch_jobs(
         client=client,
         url=settings.nfj_api_url,
         pages=settings.nfj_pages,
-        name="NoFluffJobs",
         function_to_parse=parse_nfj_offer,
         parquet_file=settings.nfj_parquet,
     )
