@@ -9,7 +9,7 @@ lint:
 	uv run ruff format .
 
 run:
-	uv run main.py 5
+	uv run main.py --rows 5
 
 cat-gold:
 	cat data/gold_report.json | jq .
