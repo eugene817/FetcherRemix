@@ -43,13 +43,29 @@ uvx --from git+https://github.com/eugene817/FetcherRemix.git fetcher --rows 5
 
 To set up a local development environment, follow these steps:
 
+0. Clone the repository:
+```bash
+git clone https://github.com/eugene817/FetcherRemix.git
+```
+
 1. Setup local env:
 ```bash
 uv sync
 uv run playwright install chromium
 ```
+or
+
+```bash
+make install
+```
+
 
 2. Run the pipeline:
 ```bash
+make run
+```
+or 
+```bash
 uv run main.py --rows 5
 ```
+

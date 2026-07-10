@@ -1,5 +1,9 @@
 .PHONY: lint run gold
 
+install:
+	uv sync
+	uv run playwright install chromium
+
 lint:
 	uv run ruff check --fix .
 	uv run ruff format .
